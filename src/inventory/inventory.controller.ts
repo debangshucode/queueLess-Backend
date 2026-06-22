@@ -7,6 +7,8 @@ import {
   UseGuards,
   UseInterceptors,
   Req,
+  Res,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -16,6 +18,8 @@ import {
 } from '@nestjs/swagger';
 import { InventoryService } from './inventory.service';
 import { AdjustInventoryDto } from './dto/adjust-inventory.dto';
+import type { Response } from 'express';
+import * as XLSX from 'xlsx';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import {
@@ -57,6 +61,37 @@ export class InventoryController {
       actorUserId,
       isSuperAdmin,
     );
+  }
+
+  @Permissions('dashboard.read') // Restricted to Manager and Organization Owner
+  @Get('export')
+  @ApiOperation({ summary: 'Export inventory status as CSV or Excel' })
+  async exportInventory(
+    @Query('format') format: 'csv' | 'xlsx',
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: { user: { role: string } },
+    @Res() res: Response,
+  ) {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const rows = await this.inventoryService.exportInventory(tenant, isSuperAdmin);
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory');
+
+    const exportFormat = format === 'csv' ? 'csv' : 'xlsx';
+
+    if (exportFormat === 'csv') {
+      const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=inventory-${Date.now()}.csv`);
+      res.send(csvContent);
+    } else {
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=inventory-${Date.now()}.xlsx`);
+      res.send(buffer);
+    }
   }
 
   @Permissions('session.update') // Allowed for attendants to query stock levels during cart additions

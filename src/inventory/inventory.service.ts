@@ -196,4 +196,49 @@ export class InventoryService {
       relations: ['creator'],
     });
   }
+
+  async exportInventory(
+    tenantContext: TenantContext,
+    isSuperAdmin: boolean,
+  ): Promise<any[]> {
+    const whereClause: any = {};
+    if (!isSuperAdmin) {
+      if (!tenantContext.organizationId) {
+        throw new AppException(
+          ErrorCode.BAD_REQUEST,
+          'Organization ID is required to export inventory',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      whereClause.organizationId = tenantContext.organizationId;
+    }
+
+    const products = await this.dataSource.getRepository(Product).find({
+      where: whereClause,
+      relations: ['category'],
+    });
+
+    const rows: any[] = [];
+    for (const p of products) {
+      let currentStock = 0;
+      if (p.inventoryEnabled) {
+        const inv = await this.inventoryRepository.findOne({
+          where: { productId: p.id },
+        });
+        currentStock = inv ? inv.currentQuantity : 0;
+      }
+
+      rows.push({
+        'Product Name': p.name,
+        SKU: p.sku,
+        Barcode: p.barcode || '',
+        Category: p.category ? p.category.name : '',
+        Price: p.price,
+        'Current Stock': currentStock,
+        Status: p.isActive ? 'ACTIVE' : 'INACTIVE',
+      });
+    }
+
+    return rows;
+  }
 }

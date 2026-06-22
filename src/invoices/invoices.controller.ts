@@ -7,6 +7,7 @@ import {
   UseGuards,
   UseInterceptors,
   Req,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -74,5 +75,42 @@ export class InvoicesController {
   ) {
     const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
     return this.invoicesService.findOne(id, tenant, isSuperAdmin);
+  }
+
+  @Permissions('receipt.verify')
+  @Get('verify/search')
+  @ApiOperation({ summary: 'Search invoices for receipt verification' })
+  async searchForVerification(
+    @Query('q') query: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: { user: { role: string } },
+  ) {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    return this.invoicesService.searchForVerification(query || '', tenant, isSuperAdmin);
+  }
+
+  @Permissions('receipt.verify')
+  @Get(':id/verify-status')
+  @ApiOperation({ summary: 'Get current status of invoice for exit security verification' })
+  async verifyStatus(
+    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: { user: { role: string } },
+  ) {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    return this.invoicesService.verifyStatus(id, tenant, isSuperAdmin);
+  }
+
+  @Permissions('receipt.verify')
+  @Post(':id/verify')
+  @ApiOperation({ summary: 'Mark receipt/invoice status as VERIFIED at exit security' })
+  async verify(
+    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser('id') actorUserId: string,
+    @Req() req: { user: { role: string } },
+  ) {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    return this.invoicesService.verify(id, tenant, actorUserId, isSuperAdmin);
   }
 }

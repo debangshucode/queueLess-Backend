@@ -312,3 +312,5 @@ To active these patterns in the codebase:
 - **Entities**: Keep TypeORM database logic in entities and repositories.
 - **Fail Early**: Throw `AppException` as soon as business rules are violated to avoid deep nesting of conditional structures.
 - **Type Safety**: Avoid using `any`. Always declare return types for services, controllers, and helpers.
+- **Enums Standard**: Do not use String Enums directly in TypeORM entities. Enums in TypeScript code must be defined as numeric enums. To store them in the database as strings, define and use a TypeORM `ValueTransformer` to map between the numeric enum values in memory and their string representations in the database.
+

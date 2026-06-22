@@ -1,7 +1,7 @@
 import { Injectable, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
-import { Invoice, InvoiceStatus } from './entities/invoice.entity';
+import { Repository, DataSource, ILike } from 'typeorm';
+import { Invoice, InvoiceStatus, InvoiceStatusMap } from './entities/invoice.entity';
 import { InvoiceItem } from './entities/invoice-item.entity';
 import { Session, SessionStatus } from '../sessions/entities/session.entity';
 import { TenantContext } from '../common/interceptors/tenant.interceptor';
@@ -206,6 +206,107 @@ export class InvoicesService {
 
     return this.invoiceRepository.find({
       where: { organizationId: tenantContext.organizationId || undefined },
+      relations: ['items', 'payment'],
+    });
+  }
+
+  async verifyStatus(
+    id: string,
+    tenantContext: TenantContext,
+    isSuperAdmin: boolean,
+  ): Promise<any> {
+    const invoice = await this.findOne(id, tenantContext, isSuperAdmin);
+
+    const statusName = InvoiceStatusMap[invoice.status] || 'UNKNOWN';
+    const statusMapped = statusName === 'PENDING' ? 'UNPAID' : statusName;
+
+    return {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      status: statusMapped,
+      subtotal: invoice.subtotal,
+      taxAmount: invoice.taxAmount,
+      discountAmount: invoice.discountAmount,
+      totalAmount: invoice.totalAmount,
+      createdAt: invoice.createdAt,
+      items: invoice.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        productName: item.productName,
+        sku: item.sku,
+        barcode: item.barcode,
+        unitPrice: item.unitPrice,
+        quantity: item.quantity,
+        totalAmount: item.totalAmount,
+      })),
+    };
+  }
+
+  async verify(
+    id: string,
+    tenantContext: TenantContext,
+    actorUserId: string,
+    isSuperAdmin: boolean,
+  ): Promise<any> {
+    const invoice = await this.findOne(id, tenantContext, isSuperAdmin);
+
+    if (invoice.status !== InvoiceStatus.PAID) {
+      const statusName = InvoiceStatusMap[invoice.status] || 'UNKNOWN';
+      const statusMapped = statusName === 'PENDING' ? 'UNPAID' : statusName;
+      throw new AppException(
+        ErrorCode.BAD_REQUEST,
+        `Cannot verify invoice with status ${statusMapped}. Only PAID invoices can be verified.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    invoice.status = InvoiceStatus.VERIFIED;
+    const saved = await this.invoiceRepository.save(invoice);
+
+    await this.auditLogsService.logAction(
+      actorUserId,
+      invoice.organizationId,
+      tenantContext.storeId,
+      'INVOICE_VERIFIED',
+      'invoices',
+      saved.id,
+      { invoiceNumber: invoice.invoiceNumber },
+    );
+
+    return this.verifyStatus(saved.id, tenantContext, isSuperAdmin);
+  }
+
+  async searchForVerification(
+    query: string,
+    tenantContext: TenantContext,
+    isSuperAdmin: boolean,
+  ): Promise<Invoice[]> {
+    if (!isSuperAdmin && !tenantContext.organizationId) {
+      throw new AppException(
+        ErrorCode.BAD_REQUEST,
+        'Organization ID is required to search invoices',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const whereClause: any = {};
+    if (!isSuperAdmin) {
+      whereClause.organizationId = tenantContext.organizationId;
+    }
+
+    // OR condition list
+    const conditions: any[] = [];
+    if (query) {
+      conditions.push({ ...whereClause, invoiceNumber: ILike(`%${query}%`) });
+      if (query.match(/^[0-9a-fA-F-]{36}$/)) {
+        conditions.push({ ...whereClause, id: query });
+      }
+    } else {
+      conditions.push(whereClause);
+    }
+
+    return this.invoiceRepository.find({
+      where: conditions,
       relations: ['items', 'payment'],
     });
   }

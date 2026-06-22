@@ -233,6 +233,21 @@ export class ProductsService {
     });
   }
 
+  async exportCatalog(
+    tenantContext: TenantContext,
+    isSuperAdmin: boolean,
+  ): Promise<any[]> {
+    const products = await this.findAll(tenantContext, isSuperAdmin);
+    return products.map((p) => ({
+      Name: p.name,
+      SKU: p.sku,
+      Barcode: p.barcode || '',
+      Price: p.price,
+      Category: p.category ? p.category.name : '',
+      'Inventory Enabled': p.inventoryEnabled ? 'Yes' : 'No',
+    }));
+  }
+
   async findOne(
     id: string,
     tenantContext: TenantContext,

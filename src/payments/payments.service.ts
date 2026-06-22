@@ -99,6 +99,13 @@ export class PaymentsService {
       invoice.status = InvoiceStatus.PAID;
       await queryRunner.manager.save(Invoice, invoice);
 
+      // Track audit logs to write after commit
+      const inventoryReductionsToLog: Array<{
+        inventoryId: string;
+        productId: string;
+        quantityReduced: number;
+      }> = [];
+
       // Inventory Reduction Logic for products with inventoryEnabled = true
       for (const item of invoice.items) {
         // Safe check if product relation exists and has inventory enabled
@@ -132,6 +139,12 @@ export class PaymentsService {
           // Update inventory quantity cache
           inventory.currentQuantity += transaction.quantity; // equivalent to -= item.quantity
           await queryRunner.manager.save(Inventory, inventory);
+
+          inventoryReductionsToLog.push({
+            inventoryId: inventory.id,
+            productId: item.productId,
+            quantityReduced: item.quantity,
+          });
         }
       }
 
@@ -147,6 +160,24 @@ export class PaymentsService {
         savedPayment.id,
         { invoiceId: invoice.id, method: dto.method, amount: paidAmount },
       );
+
+      // Log inventory reduction actions to central audit trail
+      for (const reduction of inventoryReductionsToLog) {
+        await this.auditLogsService.logAction(
+          actorUserId,
+          invoice.organizationId,
+          tenantContext.storeId,
+          'INVENTORY_REDUCED',
+          'inventory',
+          reduction.inventoryId,
+          {
+            productId: reduction.productId,
+            quantity: -reduction.quantityReduced,
+            reason: 'SALE',
+            referenceId: invoice.id,
+          },
+        );
+      }
 
       // Return the updated payment details
       return this.findOne(savedPayment.id, tenantContext, isSuperAdmin);

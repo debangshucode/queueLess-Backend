@@ -13,12 +13,40 @@ import { Session } from '../../sessions/entities/session.entity';
 import { InvoiceItem } from './invoice-item.entity';
 import { Payment } from '../../payments/entities/payment.entity';
 
+import { ValueTransformer } from 'typeorm';
+
 export enum InvoiceStatus {
-  PENDING = 'PENDING',
-  PAID = 'PAID',
-  REFUNDED = 'REFUNDED',
-  CANCELLED = 'CANCELLED',
+  PENDING = 1,
+  PAID = 2,
+  REFUNDED = 3,
+  CANCELLED = 4,
+  VERIFIED = 5,
 }
+
+export const InvoiceStatusMap: Record<InvoiceStatus, string> = {
+  [InvoiceStatus.PENDING]: 'PENDING',
+  [InvoiceStatus.PAID]: 'PAID',
+  [InvoiceStatus.REFUNDED]: 'REFUNDED',
+  [InvoiceStatus.CANCELLED]: 'CANCELLED',
+  [InvoiceStatus.VERIFIED]: 'VERIFIED',
+};
+
+export const InvoiceStatusFromDbMap: Record<string, InvoiceStatus> = {
+  PENDING: InvoiceStatus.PENDING,
+  PAID: InvoiceStatus.PAID,
+  REFUNDED: InvoiceStatus.REFUNDED,
+  CANCELLED: InvoiceStatus.CANCELLED,
+  VERIFIED: InvoiceStatus.VERIFIED,
+};
+
+export const InvoiceStatusTransformer: ValueTransformer = {
+  to(value: InvoiceStatus): string {
+    return InvoiceStatusMap[value] || 'PENDING';
+  },
+  from(value: string): InvoiceStatus {
+    return InvoiceStatusFromDbMap[value] ?? InvoiceStatus.PENDING;
+  },
+};
 
 @Entity('invoices')
 export class Invoice {
@@ -36,8 +64,8 @@ export class Invoice {
 
   @Column({
     type: 'varchar',
-    enum: InvoiceStatus,
-    default: InvoiceStatus.PENDING,
+    transformer: InvoiceStatusTransformer,
+    default: 'PENDING',
   })
   status: InvoiceStatus;
 

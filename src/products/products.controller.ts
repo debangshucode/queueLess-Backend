@@ -11,6 +11,7 @@ import {
   UploadedFile,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -21,8 +22,9 @@ import {
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
-import { Request } from 'express';
+import type { Request, Response } from 'express';
 import { ProductsService } from './products.service';
+import * as XLSX from 'xlsx';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -152,6 +154,37 @@ export class ProductsController {
     @CurrentTenant() tenant: TenantContext,
   ) {
     return this.productsService.findByBarcode(code, tenant);
+  }
+
+  @Permissions('dashboard.read')
+  @Get('export')
+  @ApiOperation({ summary: 'Export product catalog as CSV or Excel' })
+  async exportCatalog(
+    @Query('format') format: 'csv' | 'xlsx',
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const rows = await this.productsService.exportCatalog(tenant, isSuperAdmin);
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+
+    const exportFormat = format === 'csv' ? 'csv' : 'xlsx';
+
+    if (exportFormat === 'csv') {
+      const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=catalog-${Date.now()}.csv`);
+      res.send(csvContent);
+    } else {
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=catalog-${Date.now()}.xlsx`);
+      res.send(buffer);
+    }
   }
 
   @Permissions('user.read')
